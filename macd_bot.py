@@ -159,7 +159,7 @@ def run_bot_loop():
             check_macd_signals()
         except Exception as e:
             print("❌ Bot crashed:", e)
-        time.sleep(900)
+        time.sleep(90)
 
 if __name__ == '__main__':
     threading.Thread(target=run_bot_loop).start()
