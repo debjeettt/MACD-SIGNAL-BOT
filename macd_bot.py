@@ -15,7 +15,7 @@ app = Flask(__name__)
 # =================== GMAIL SETUP ======================
 SENDER_EMAIL = "debjeetsolmacd@gmail.com"
 APP_PASSWORD = "czczkxwwsadeglzm"
-RECEIVER_EMAIL = "debjeetbiswas01@gmail.com"
+RECEIVER_EMAIL = "debjeetsolmacd01@gmail.com"
 
 def send_email(subject, body):
     msg = MIMEMultipart()
