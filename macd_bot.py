@@ -7,11 +7,20 @@ from datetime import datetime
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
+from flask import Flask
+from threading import Thread
 
 # Gmail setup
 SENDER_EMAIL = "debjeetsolmacd@gmail.com"
 APP_PASSWORD = "czczkxwwsadeglzm"
 RECEIVER_EMAIL = "debjeetbiswas01@gmail.com"
+
+# Flask app for uptime ping
+app = Flask(__name__)
+
+@app.route('/')
+def ping():
+    return "I'm alive!"
 
 def send_email(subject, body):
     msg = MIMEMultipart()
@@ -143,8 +152,12 @@ def run_bot():
     except Exception as e:
         print("❌ Error in run_bot():", e)
 
-# Infinite loop (15-minute scanner)
-while True:
-    print("🔁 Bot running... checking for MACD signals.")
-    run_bot()
-    time.sleep(900)  # Sleep 15 minutes
+if __name__ == "__main__":
+    # Start the Flask web server in a background thread
+    Thread(target=lambda: app.run(host='0.0.0.0', port=10000)).start()
+
+    # Run the bot every 15 minutes
+    while True:
+        print("🔁 Bot running... checking for MACD signals.")
+        run_bot()
+        time.sleep(900)
