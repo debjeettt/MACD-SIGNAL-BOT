@@ -155,11 +155,13 @@ def home():
 # =================== RUN FLASK + BOT LOOP =======================
 def run_bot_loop():
     while True:
+        print("🔁 Bot running... checking for MACD signals.")  # ✅ Moved here
         try:
             check_macd_signals()
         except Exception as e:
             print("❌ Bot crashed:", e)
         time.sleep(90)
+
 
 if __name__ == '__main__':
     threading.Thread(target=run_bot_loop).start()
