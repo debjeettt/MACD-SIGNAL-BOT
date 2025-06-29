@@ -5,15 +5,14 @@ import pytz
 import time
 import threading
 from datetime import datetime
-
+from flask import Flask
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 
-from flask import Flask
 app = Flask(__name__)
 
-# ======================= GMAIL SETUP ============================
+# =================== GMAIL SETUP ======================
 SENDER_EMAIL = "debjeetsolmacd@gmail.com"
 APP_PASSWORD = "czczkxwwsadeglzm"
 RECEIVER_EMAIL = "debjeetbiswas01@gmail.com"
@@ -34,11 +33,18 @@ def send_email(subject, body):
     except Exception as e:
         print("❌ Gmail failed:", str(e))
 
-# ======================= MACD LOGIC =============================
-exchange = ccxt.binance()
 
+# ================== GLOBAL STATE ======================
+exchange = ccxt.bybit()
+used_indexes = set()
+signals_in_phase = 0
+last_macd_above = None
+last_triggered_type = None
+
+
+# =================== MACD FUNCTIONS ===================
 def get_data():
-    ohlcv = exchange.fetch_ohlcv('SOLUSDT', timeframe='15m', limit=500)
+    ohlcv = exchange.fetch_ohlcv('SOL/USDT:USDT', timeframe='15m', limit=100)
     df = pd.DataFrame(ohlcv, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
     df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
     return df
@@ -50,20 +56,22 @@ def add_macd(df):
     df['hist'] = macd.macd_diff()
     return df
 
+
+# ================== SIGNAL CHECK LOGIC ===================
 def check_macd_signals():
-    print("🔁 Bot running... checking for MACD signals.")
+    global used_indexes, signals_in_phase, last_macd_above, last_triggered_type
+
     df = get_data()
     df = add_macd(df)
-
-    used_indexes = set()
-    signals_in_phase = 0
-    last_macd_above = None
-    last_triggered_type = None
 
     for i in range(3, len(df) - 1):
         cur = df.iloc[i]
         prev1, prev2, prev3 = df.iloc[i - 1], df.iloc[i - 2], df.iloc[i - 3]
         next_candle = df.iloc[i + 1]
+
+        # Skip if not the latest completed candle
+        if next_candle['timestamp'] < df.iloc[-1]['timestamp']:
+            continue
 
         ts = next_candle['timestamp'].tz_localize('UTC').tz_convert('Asia/Kolkata').strftime('%Y-%m-%d %I:%M:%S %p')
         price = next_candle['open']
@@ -72,6 +80,7 @@ def check_macd_signals():
         signal = None
         trigger = None
 
+        # === Track crossover phase ===
         macd_above = cur['macd'] > cur['signal']
         if last_macd_above is None:
             last_macd_above = macd_above
@@ -83,7 +92,7 @@ def check_macd_signals():
         if signals_in_phase >= 4:
             continue
 
-        # === LONG ===
+        # === LONG signals ===
         if (
             i not in used_indexes and
             hist > 0 and hist > prev_hist and
@@ -102,7 +111,7 @@ def check_macd_signals():
                 used_indexes.update([i - 1, i - 2, i - 3])
                 last_triggered_type = None
 
-        # === SHORT ===
+        # === SHORT signals ===
         if (
             i not in used_indexes and
             hist < 0 and hist < prev_hist and
@@ -124,7 +133,6 @@ def check_macd_signals():
         if signal:
             emoji = "🟢" if signal == "long" else "🔴"
             asset = "SOL/USDT"
-
             print("\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
             print(f"{emoji}  {signal.upper()} SIGNAL — {asset}")
             print(f"🕒 Time     : {ts}")
@@ -147,21 +155,20 @@ def check_macd_signals():
             send_email(subject, body)
             signals_in_phase += 1
 
-# ===================== FLASK UPTIME PING ========================
+
+# ================== UPTIME FLASK + LOOP ===================
 @app.route('/')
 def home():
     return "I'm alive!"
 
-# =================== RUN FLASK + BOT LOOP =======================
 def run_bot_loop():
     while True:
-        print("🔁 Bot running... checking for MACD signals.")  # ✅ Moved here
+        print("🔁 Bot running... checking for MACD signals.")
         try:
             check_macd_signals()
         except Exception as e:
             print("❌ Bot crashed:", e)
         time.sleep(90)
-
 
 if __name__ == '__main__':
     threading.Thread(target=run_bot_loop).start()
