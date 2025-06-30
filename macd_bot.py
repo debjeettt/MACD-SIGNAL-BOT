@@ -69,7 +69,7 @@ last_macd_sign = None
 
 # ========== DATA FETCHING ==========
 def get_data():
-    ohlcv = exchange.fetch_ohlcv('SOL/USDT:USDT', timeframe='15m', limit=100)
+    ohlcv = exchange.fetch_ohlcv('MKR/USDT:USDT', timeframe='15m', limit=100)
     df = pd.DataFrame(ohlcv, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
     df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
     return df
@@ -120,7 +120,7 @@ def format_signal_html(signal, trigger, ts, price, asset):
                   </tr>
                 </table>
                 <div style="margin-top:22px;text-align:center;">
-                  <a href="https://www.tradingview.com/chart/?symbol=BYBIT:SOLUSDT" style="background:{s['color']};color:#fff;font-weight:700;text-decoration:none;padding:10px 30px;border-radius:8px;font-size:18px;box-shadow:0 2px 8px #0002;">View Chart</a>
+                  <a href="https://www.tradingview.com/chart/?symbol=BYBIT:MKRUSDT" style="background:{s['color']};color:#fff;font-weight:700;text-decoration:none;padding:10px 30px;border-radius:8px;font-size:18px;box-shadow:0 2px 8px #0002;">View Chart</a>
                 </div>
               </div>
               <div style="background:#f2f2f6;border-radius:0 0 18px 18px;padding:18px 32px 12px;">
@@ -179,7 +179,7 @@ def check_macd_signals():
                 trigger = "Bearish crossover"
             if signal:
                 emoji = "🟢" if signal == "long" else "🔴"
-                asset = "SOL/USDT"
+                asset = "MKR/USDT"
                 subject = f"{signal.upper()} SIGNAL - {asset}"
                 body = f"""{emoji} {signal.upper()} SIGNAL TRIGGERED — {asset}
 
@@ -271,7 +271,7 @@ def check_macd_signals():
         # Send signal
         if signal:
             emoji = "🟢" if signal == "long" else "🔴"
-            asset = "SOL/USDT"
+            asset = "MKR/USDT"
             print("\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
             print(f"{emoji}  {signal.upper()} SIGNAL — {asset}")
             print(f"🕒 Time     : {ts}")
