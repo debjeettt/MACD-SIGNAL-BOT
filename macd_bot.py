@@ -12,7 +12,7 @@ from email.mime.multipart import MIMEMultipart
 
 app = Flask(__name__)
 
-# =================== GMAIL SETUP ======================
+# ========== GMAIL SETUP ==========
 SENDER_EMAIL = "debjeetsolmacd@gmail.com"
 APP_PASSWORD = "czczkxwwsadeglzm"
 RECEIVER_EMAIL = "debjeetsolmacd01@gmail.com"
@@ -33,16 +33,16 @@ def send_email(subject, body):
     except Exception as e:
         print("❌ Gmail failed:", str(e))
 
-
-# ================== GLOBAL STATE ======================
+# ========== EXCHANGE SETUP ==========
 exchange = ccxt.bybit()
+
+# ========== GLOBAL STATE ==========
 used_indexes = set()
 signals_in_phase = 0
 last_macd_above = None
 last_triggered_type = None
 
-
-# =================== MACD FUNCTIONS ===================
+# ========== DATA FETCHING ==========
 def get_data():
     ohlcv = exchange.fetch_ohlcv('SOL/USDT:USDT', timeframe='15m', limit=100)
     df = pd.DataFrame(ohlcv, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
@@ -56,8 +56,7 @@ def add_macd(df):
     df['hist'] = macd.macd_diff()
     return df
 
-
-# ================== SIGNAL CHECK LOGIC ===================
+# ========== SIGNAL LOGIC ==========
 def check_macd_signals():
     global used_indexes, signals_in_phase, last_macd_above, last_triggered_type
 
@@ -69,7 +68,6 @@ def check_macd_signals():
         prev1, prev2, prev3 = df.iloc[i - 1], df.iloc[i - 2], df.iloc[i - 3]
         next_candle = df.iloc[i + 1]
 
-        # Skip if not the latest completed candle
         if next_candle['timestamp'] < df.iloc[-1]['timestamp']:
             continue
 
@@ -80,7 +78,6 @@ def check_macd_signals():
         signal = None
         trigger = None
 
-        # === Track crossover phase ===
         macd_above = cur['macd'] > cur['signal']
         if last_macd_above is None:
             last_macd_above = macd_above
@@ -92,7 +89,7 @@ def check_macd_signals():
         if signals_in_phase >= 4:
             continue
 
-        # === LONG signals ===
+        # === LONG SIGNALS ===
         if (
             i not in used_indexes and
             hist > 0 and hist > prev_hist and
@@ -103,15 +100,15 @@ def check_macd_signals():
             used_indexes.add(i)
             last_triggered_type = f"deep_green_{macd_above}"
 
-        elif all(idx not in used_indexes for idx in [i - 1, i - 2, i - 3]):
+        elif all(idx not in used_indexes for idx in [i-1, i-2, i-3]):
             h1, h2, h3 = prev1['hist'], prev2['hist'], prev3['hist']
             if h1 < 0 and h2 < 0 and h3 < 0 and h1 > h2 > h3:
                 signal = "long"
                 trigger = "3 rising red MACD bars"
-                used_indexes.update([i - 1, i - 2, i - 3])
+                used_indexes.update([i-1, i-2, i-3])
                 last_triggered_type = None
 
-        # === SHORT signals ===
+        # === SHORT SIGNALS ===
         if (
             i not in used_indexes and
             hist < 0 and hist < prev_hist and
@@ -122,12 +119,12 @@ def check_macd_signals():
             used_indexes.add(i)
             last_triggered_type = f"deep_red_{macd_above}"
 
-        elif all(idx not in used_indexes for idx in [i - 1, i - 2, i - 3]):
+        elif all(idx not in used_indexes for idx in [i-1, i-2, i-3]):
             h1, h2, h3 = prev1['hist'], prev2['hist'], prev3['hist']
             if h1 > 0 and h2 > 0 and h3 > 0 and h1 < h2 < h3:
                 signal = "short"
                 trigger = "3 falling green MACD bars"
-                used_indexes.update([i - 1, i - 2, i - 3])
+                used_indexes.update([i-1, i-2, i-3])
                 last_triggered_type = None
 
         if signal:
@@ -155,8 +152,7 @@ def check_macd_signals():
             send_email(subject, body)
             signals_in_phase += 1
 
-
-# ================== UPTIME FLASK + LOOP ===================
+# ========== KEEP BOT + FLASK ALIVE ==========
 @app.route('/')
 def home():
     return "I'm alive!"
