@@ -20,7 +20,6 @@ RECEIVER_EMAIL = "debjeetsolmacd01@gmail.com"
 
 exchange = ccxt.bybit()
 
-# Persistent state file
 STATE_FILE = "signal_state_v2.json"
 
 def send_email(subject, body, html_body=None):
@@ -67,18 +66,11 @@ def add_macd(df):
     return df
 
 def format_signal_html(signal_type, trigger, ts, price, asset, signal_id):
-    if signal_type == "long":
-        gradient = "linear-gradient(90deg, #00ffa3 0%, #dc1fff 100%)"
-        emoji = "🟢"
-        badge = "LONG"
-        badge_color = "#00ffa3"
-    else:
-        gradient = "linear-gradient(90deg, #fc5c7d 0%, #6a82fb 100%)"
-        emoji = "🔴"
-        badge = "SHORT"
-        badge_color = "#fc5c7d"
-
-    html = f"""
+    gradient = "linear-gradient(90deg, #00ffa3 0%, #dc1fff 100%)" if signal_type == "long" else "linear-gradient(90deg, #fc5c7d 0%, #6a82fb 100%)"
+    emoji = "🟢" if signal_type == "long" else "🔴"
+    badge = "LONG" if signal_type == "long" else "SHORT"
+    badge_color = "#00ffa3" if signal_type == "long" else "#fc5c7d"
+    return f"""
     <html>
     <body style="background:#1c1c1c;font-family:sans-serif;color:white;">
     <div style="background:{gradient};padding:20px;border-radius:10px;">
@@ -92,7 +84,6 @@ def format_signal_html(signal_type, trigger, ts, price, asset, signal_id):
     </body>
     </html>
     """
-    return html
 
 def check_macd_signals():
     state = load_state()
@@ -103,10 +94,10 @@ def check_macd_signals():
 
     for i in range(3, len(df) - 1):
         cur = df.iloc[i]
-        prev1 = df.iloc[i-1]
-        prev2 = df.iloc[i-2]
-        prev3 = df.iloc[i-3]
-        next_candle = df.iloc[i+1]
+        prev1 = df.iloc[i - 1]
+        prev2 = df.iloc[i - 2]
+        prev3 = df.iloc[i - 3]
+        next_candle = df.iloc[i + 1]
         unique_id = str(next_candle['timestamp'])
 
         if unique_id in used_signal_bars:
@@ -116,30 +107,35 @@ def check_macd_signals():
         price = next_candle['open']
         signal_type = None
         trigger = None
+        used_ids = []
 
-        # === Deep green (long)
-        if cur['hist'] > 0 and cur['hist'] > prev1['hist']:
+        # === Deep green
+        if cur['hist'] > 0 and cur['hist'] > prev1['hist'] and unique_id not in used_signal_bars:
             signal_type = "long"
             trigger = "Deep green MACD bar"
+            used_ids = [unique_id]
 
-        # === Deep red (short)
-        elif cur['hist'] < 0 and cur['hist'] < prev1['hist']:
+        # === Deep red
+        elif cur['hist'] < 0 and cur['hist'] < prev1['hist'] and unique_id not in used_signal_bars:
             signal_type = "short"
             trigger = "Deep red MACD bar"
+            used_ids = [unique_id]
 
-        # === 3 light red (long)
+        # === 3 rising red
         elif (prev1['hist'] < 0 and prev2['hist'] < 0 and prev3['hist'] < 0 and
               prev1['hist'] > prev2['hist'] > prev3['hist'] and
-              all(str(df.iloc[idx + 1]['timestamp']) not in used_signal_bars for idx in [i-1, i-2, i-3])):
+              all(str(df.iloc[idx + 1]['timestamp']) not in used_signal_bars for idx in [i - 1, i - 2, i - 3])):
             signal_type = "long"
             trigger = "3 consecutive light red MACD bars"
+            used_ids = [str(df.iloc[idx + 1]['timestamp']) for idx in [i - 1, i - 2, i - 3]]
 
-        # === 3 light green (short)
+        # === 3 falling green
         elif (prev1['hist'] > 0 and prev2['hist'] > 0 and prev3['hist'] > 0 and
               prev1['hist'] < prev2['hist'] < prev3['hist'] and
-              all(str(df.iloc[idx + 1]['timestamp']) not in used_signal_bars for idx in [i-1, i-2, i-3])):
+              all(str(df.iloc[idx + 1]['timestamp']) not in used_signal_bars for idx in [i - 1, i - 2, i - 3])):
             signal_type = "short"
             trigger = "3 consecutive light green MACD bars"
+            used_ids = [str(df.iloc[idx + 1]['timestamp']) for idx in [i - 1, i - 2, i - 3]]
 
         if signal_type:
             signal_id = f"{signal_type}-{unique_id}"
@@ -157,17 +153,13 @@ def check_macd_signals():
             html_body = format_signal_html(signal_type, trigger, ts, price, asset, signal_id)
             send_email(subject, body, html_body)
 
-            # Mark bars as used
-            if "light" in trigger:
-                for idx in [i-1, i-2, i-3]:
-                    used_signal_bars.add(str(df.iloc[idx + 1]['timestamp']))
-            else:
-                used_signal_bars.add(unique_id)
+            for uid in used_ids:
+                used_signal_bars.add(uid)
 
             state["used_signal_bars"] = list(used_signal_bars)
             save_state(state)
             print(f"✅ Signal sent: {trigger} → {signal_type.upper()}")
-            break
+            break  # ✅ Only one signal per run
 
     else:
         print("No valid signal found.")
