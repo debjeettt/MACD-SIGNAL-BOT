@@ -50,7 +50,11 @@ def load_state():
                 return json.load(f)
         except Exception as e:
             print(f"Warning: could not load state file: {e}")
-    return {"used_signal_bars": []}
+    return {
+        "used_signal_bars": [],
+        "last_light_streak": None,
+        "last_deep_type": None
+    }
 
 def get_data():
     ohlcv = exchange.fetch_ohlcv('MKR/USDT:USDT', timeframe='15m', limit=100)
@@ -65,11 +69,15 @@ def add_macd(df):
     df['hist'] = macd.macd_diff()
     return df
 
-def format_signal_html(signal_type, trigger, ts, price, asset, signal_id):
+def format_signal_html(signal_type, trigger, ts, price, asset, signal_id, bar_type, streak_length):
+    # Gmail gradient card design from your first code!
     gradient = "linear-gradient(90deg, #00ffa3 0%, #dc1fff 100%)" if signal_type == "long" else "linear-gradient(90deg, #fc5c7d 0%, #6a82fb 100%)"
     emoji = "🟢" if signal_type == "long" else "🔴"
     badge = "LONG" if signal_type == "long" else "SHORT"
     badge_color = "#00ffa3" if signal_type == "long" else "#fc5c7d"
+    streak_info = bar_type.replace('_',' ').title()
+    if streak_length is not None:
+        streak_info += f" | Streak: {streak_length}"
     return f"""
     <html>
     <body style="background:#1c1c1c;font-family:sans-serif;color:white;">
@@ -79,89 +87,155 @@ def format_signal_html(signal_type, trigger, ts, price, asset, signal_id):
     <p><b>Time:</b> {ts}</p>
     <p><b>Price:</b> ${price:.2f}</p>
     <p><b>Trigger:</b> {trigger}</p>
+    <p><b>Type:</b> {streak_info}</p>
     <p><b>Signal ID:</b> {signal_id}</p>
     </div>
     </body>
     </html>
     """
 
+def get_bar_type(hist, prev_hist):
+    if hist > 0 and hist > prev_hist:
+        return "deep_green"
+    elif hist < 0 and hist < prev_hist:
+        return "deep_red"
+    elif hist > 0 and hist < prev_hist:
+        return "light_green"
+    elif hist < 0 and hist > prev_hist:
+        return "light_red"
+    else:
+        return "none"
+
 def check_macd_signals():
     state = load_state()
     used_signal_bars = set(state.get("used_signal_bars", []))
+    last_light_streak = state.get("last_light_streak", None)
+    last_deep_type = state.get("last_deep_type", None)
     df = get_data()
     df = add_macd(df)
     asset = "MKR/USDT"
 
-    for i in range(3, len(df) - 1):
-        cur = df.iloc[i]
-        prev1 = df.iloc[i - 1]
-        prev2 = df.iloc[i - 2]
-        prev3 = df.iloc[i - 3]
+    # Only process the last fully closed bar
+    i = len(df) - 2
+    cur = df.iloc[i]
+    prev = df.iloc[i - 1]
+    cur_type = get_bar_type(cur['hist'], prev['hist'])
+
+    # For time/price, use the open of the next bar after the closed one
+    if i + 1 < len(df):
         next_candle = df.iloc[i + 1]
-        unique_id = str(next_candle['timestamp'])
-
-        if unique_id in used_signal_bars:
-            continue
-
         ts = next_candle['timestamp'].tz_localize('UTC').tz_convert('Asia/Kolkata').strftime('%Y-%m-%d %I:%M:%S %p')
         price = next_candle['open']
-        signal_type = None
-        trigger = None
-        used_ids = []
+    else:
+        ts = cur['timestamp'].tz_localize('UTC').tz_convert('Asia/Kolkata').strftime('%Y-%m-%d %I:%M:%S %p')
+        price = cur['close']
 
-        # === Deep green
-        if cur['hist'] > 0 and cur['hist'] > prev1['hist'] and unique_id not in used_signal_bars:
-            signal_type = "long"
-            trigger = "Deep green MACD bar"
-            used_ids = [unique_id]
+    unique_id = f"{cur_type}_{cur['timestamp']}"
 
-        # === Deep red
-        elif cur['hist'] < 0 and cur['hist'] < prev1['hist'] and unique_id not in used_signal_bars:
-            signal_type = "short"
-            trigger = "Deep red MACD bar"
-            used_ids = [unique_id]
+    # Deep bar logic: Only send if not already sent for this bar AND not already signaled for this deep streak
+    if cur_type in ['deep_green', 'deep_red']:
+        # Only send if the deep type just changed, or if it's the first deep after a non-deep bar
+        if last_deep_type != cur_type:
+            if unique_id not in used_signal_bars:
+                signal_type = "long" if cur_type == "deep_green" else "short"
+                trigger = "Deep green MACD bar" if cur_type == "deep_green" else "Deep red MACD bar"
+                signal_id = f"{cur_type}-{cur['timestamp']}"
+                html_body = format_signal_html(
+                    signal_type=signal_type,
+                    trigger=trigger,
+                    ts=ts,
+                    price=price,
+                    asset=asset,
+                    signal_id=signal_id,
+                    bar_type=cur_type,
+                    streak_length=None
+                )
+                body = f"""{'🟢' if signal_type == 'long' else '🔴'} {signal_type.upper()} SIGNAL TRIGGERED — {asset}
 
-        # === 3 rising red
-        elif (prev1['hist'] < 0 and prev2['hist'] < 0 and prev3['hist'] < 0 and
-              prev1['hist'] > prev2['hist'] > prev3['hist'] and
-              all(str(df.iloc[idx + 1]['timestamp']) not in used_signal_bars for idx in [i - 1, i - 2, i - 3])):
-            signal_type = "long"
-            trigger = "3 consecutive light red MACD bars"
-            used_ids = [str(df.iloc[idx + 1]['timestamp']) for idx in [i - 1, i - 2, i - 3]]
-
-        # === 3 falling green
-        elif (prev1['hist'] > 0 and prev2['hist'] > 0 and prev3['hist'] > 0 and
-              prev1['hist'] < prev2['hist'] < prev3['hist'] and
-              all(str(df.iloc[idx + 1]['timestamp']) not in used_signal_bars for idx in [i - 1, i - 2, i - 3])):
-            signal_type = "short"
-            trigger = "3 consecutive light green MACD bars"
-            used_ids = [str(df.iloc[idx + 1]['timestamp']) for idx in [i - 1, i - 2, i - 3]]
-
-        if signal_type:
-            signal_id = f"{signal_type}-{unique_id}"
-            subject = f"{signal_type.upper()} SIGNAL - {asset}"
-            body = f"""{'🟢' if signal_type == 'long' else '🔴'} {signal_type.upper()} SIGNAL TRIGGERED — {asset}
-
-📅 Time      : {ts}
-💰 Price     : ${price:.2f}
-🎯 Triggered : {trigger}
+Type        : {cur_type.replace('_', ' ').title()}
+📅 Time     : {ts}
+💰 Price    : ${price:.2f}
+🎯 Trigger  : {trigger}
+Signal ID   : {signal_id}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-🤖 Powered by MACD Signal Bot
+🤖 Powered by MACD Signal Bot — by debjeettt
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 """
-            html_body = format_signal_html(signal_type, trigger, ts, price, asset, signal_id)
-            send_email(subject, body, html_body)
+                subject = f"{signal_type.upper()} SIGNAL - {asset}"
+                send_email(subject, body, html_body)
+                used_signal_bars.add(unique_id)
+                state["used_signal_bars"] = list(used_signal_bars)
+                state["last_deep_type"] = cur_type
+                save_state(state)
+                print(f"✅ Signal sent: {trigger} → {signal_type.upper()}")
+            else:
+                print("No new deep signal.")
+        else:
+            print("Ignoring repeated deep signal per streak.")
 
-            for uid in used_ids:
-                used_signal_bars.add(uid)
+    # Light bar logic: check streak for last 3 bars, only signal at first streak per run
+    elif cur_type in ['light_green', 'light_red']:
+        # Check last 3 consecutive bars are the same type
+        if i >= 2:
+            prev1_type = get_bar_type(df.iloc[i-1]['hist'], df.iloc[i-2]['hist'])
+            prev2_type = get_bar_type(df.iloc[i-2]['hist'], df.iloc[i-3]['hist'])
+            if prev1_type == cur_type and prev2_type == cur_type:
+                # Only signal if last streak type is not current
+                if last_light_streak != cur_type:
+                    streak_id = f"{cur_type}_{cur['timestamp']}"
+                    if streak_id not in used_signal_bars:
+                        signal_type = "short" if cur_type == "light_green" else "long"
+                        trigger = "3 consecutive light green MACD bars" if cur_type == "light_green" else "3 consecutive light red MACD bars"
+                        signal_id = f"{cur_type}-{cur['timestamp']}"
+                        html_body = format_signal_html(
+                            signal_type=signal_type,
+                            trigger=trigger,
+                            ts=ts,
+                            price=price,
+                            asset=asset,
+                            signal_id=signal_id,
+                            bar_type=cur_type,
+                            streak_length=3
+                        )
+                        body = f"""{'🔴' if signal_type == 'short' else '🟢'} {signal_type.upper()} SIGNAL TRIGGERED — {asset}
 
-            state["used_signal_bars"] = list(used_signal_bars)
-            save_state(state)
-            print(f"✅ Signal sent: {trigger} → {signal_type.upper()}")
-            break  # ✅ Only one signal per run
+Type        : {cur_type.replace('_', ' ').title()}
+Streak      : 3
+📅 Time     : {ts}
+💰 Price    : ${price:.2f}
+🎯 Trigger  : {trigger}
+Signal ID   : {signal_id}
 
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🤖 Powered by MACD Signal Bot — by debjeettt
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+"""
+                        subject = f"{signal_type.upper()} SIGNAL - {asset}"
+                        send_email(subject, body, html_body)
+                        used_signal_bars.add(streak_id)
+                        state["used_signal_bars"] = list(used_signal_bars)
+                        state["last_light_streak"] = cur_type
+                        save_state(state)
+                        print(f"✅ Signal sent: {trigger} → {signal_type.upper()}")
+                    else:
+                        print("No new light signal.")
+                else:
+                    print("Ignoring repeated light signal per streak.")
+            else:
+                # Streak broken, reset last_light_streak
+                if last_light_streak is not None:
+                    state["last_light_streak"] = None
+                    save_state(state)
+                print("No valid light streak.")
+        else:
+            print("Not enough bars for light streak check.")
     else:
+        # Reset streak memory if neither deep nor light
+        if last_light_streak is not None or last_deep_type is not None:
+            state["last_light_streak"] = None
+            state["last_deep_type"] = None
+            save_state(state)
         print("No valid signal found.")
 
 @app.route('/')
