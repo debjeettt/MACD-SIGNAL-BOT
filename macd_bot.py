@@ -13,12 +13,14 @@ import os
 
 app = Flask(__name__)
 
+# Gmail credentials
 SENDER_EMAIL = "debjeetsolmacd@gmail.com"
 APP_PASSWORD = "czczkxwwsadeglzm"
 RECEIVER_EMAIL = "debjeetsolmacd01@gmail.com"
 
 exchange = ccxt.bybit()
 
+# Persistent state file
 STATE_FILE = "signal_state_v2.json"
 
 def send_email(subject, body, html_body=None):
@@ -49,9 +51,7 @@ def load_state():
                 return json.load(f)
         except Exception as e:
             print(f"Warning: could not load state file: {e}")
-    return {
-        "used_signal_bars": []
-    }
+    return {"used_signal_bars": []}
 
 def get_data():
     ohlcv = exchange.fetch_ohlcv('MKR/USDT:USDT', timeframe='15m', limit=100)
@@ -69,68 +69,26 @@ def add_macd(df):
 def format_signal_html(signal_type, trigger, ts, price, asset, signal_id):
     if signal_type == "long":
         gradient = "linear-gradient(90deg, #00ffa3 0%, #dc1fff 100%)"
-        header = "🚀 FUTURE LONG SIGNAL"
         emoji = "🟢"
-        accent = "#00ffa3"
-        futuristic_icon = "https://em-content.zobj.net/source/animated-noto-color-emoji/356/rocket_1f680.gif"
         badge = "LONG"
         badge_color = "#00ffa3"
     else:
         gradient = "linear-gradient(90deg, #fc5c7d 0%, #6a82fb 100%)"
-        header = "⚡ FUTURE SHORT SIGNAL"
         emoji = "🔴"
-        accent = "#fc5c7d"
-        futuristic_icon = "https://em-content.zobj.net/source/animated-noto-color-emoji/356/high-voltage_26a1.gif"
         badge = "SHORT"
         badge_color = "#fc5c7d"
 
     html = f"""
     <html>
-    <body style="background: #16181a; padding: 0; margin: 0; font-family: 'Segoe UI', Arial, sans-serif;">
-      <div style="max-width:530px;margin:48px auto 10px auto;border-radius:24px;box-shadow:0 8px 44px #000b;padding:0;overflow:hidden;background: #23272f;">
-        <div style="background: {gradient};padding:30px 40px 14px;position:relative;">
-          <img src="{futuristic_icon}" width="68" style="position:absolute;top:18px;right:36px;filter:drop-shadow(0 6px 16px #0008);" />
-          <div style="font-size:41px;font-weight:900;letter-spacing:1.1px;line-height:1.07;color:#fff;text-shadow:0 3px 20px #0009;">
-            {emoji} {header}
-          </div>
-          <span style="display:inline-block; margin-top:15px; background:{badge_color}ee;color:#fff;font-size:22px;font-weight:800;padding:8px 32px 8px 28px;border-radius:22px;text-shadow:0 2px 12px #0007;letter-spacing:2.2px;box-shadow:0 3px 12px #0004;">
-            {badge}
-          </span>
-        </div>
-        <div style="padding:32px 40px 24px;">
-          <table cellpadding="0" cellspacing="0" style="width:100%;font-size:20px;">
-            <tr>
-              <td><b>Asset</b>:</td>
-              <td style="text-align:right;color:#fff;font-weight:700;">{asset}</td>
-            </tr>
-            <tr>
-              <td><b>Time</b>:</td>
-              <td style="text-align:right;color:#aaa;">{ts}</td>
-            </tr>
-            <tr>
-              <td><b>Price</b>:</td>
-              <td style="text-align:right;font-weight:800;color:{accent};">${price:.2f}</td>
-            </tr>
-            <tr>
-              <td><b>Trigger</b>:</td>
-              <td style="text-align:right;color:{accent};font-weight:700;">{trigger}</td>
-            </tr>
-            <tr>
-              <td><b>Signal ID</b>:</td>
-              <td style="text-align:right;font-size:14px;color:#888;">{signal_id}</td>
-            </tr>
-          </table>
-          <div style="margin-top:34px;text-align:center;">
-            <a href="https://www.tradingview.com/chart/?symbol=BYBIT:MKRUSDT" style="background:{accent};color:#191a1b;font-weight:900;text-decoration:none;padding:15px 38px;border-radius:12px;font-size:22px;box-shadow:0 3px 16px #0005;letter-spacing:1.3px;">🌐 View Live Chart</a>
-          </div>
-        </div>
-        <div style="background:#1a1e22;border-radius:0 0 24px 24px;padding:20px 40px 18px;">
-          <div style="font-size:15px;color:#aaa;text-align:center;">
-            🤖 <b>MACD AI Signal Bot</b> &bull; <span style="color:#00ffa3;">#FUTURE</span> <span style="color:#fc5c7d;">#ALERT</span><br>
-            <span style="font-size:13px;color:#666;">Automated signal. Not financial advice. <b>Trade smart. Ride the future.</b></span>
-          </div>
-        </div>
-      </div>
+    <body style="background:#1c1c1c;font-family:sans-serif;color:white;">
+    <div style="background:{gradient};padding:20px;border-radius:10px;">
+    <h2>{emoji} {signal_type.upper()} SIGNAL — {badge}</h2>
+    <p><b>Asset:</b> {asset}</p>
+    <p><b>Time:</b> {ts}</p>
+    <p><b>Price:</b> ${price:.2f}</p>
+    <p><b>Trigger:</b> {trigger}</p>
+    <p><b>Signal ID:</b> {signal_id}</p>
+    </div>
     </body>
     </html>
     """
@@ -143,140 +101,76 @@ def check_macd_signals():
     df = add_macd(df)
     asset = "MKR/USDT"
 
-    # Only check last 3 confirmed candles (i for completed bar, next_candle for the next bar)
-    for i in range(len(df)-4, len(df)-1):
+    for i in range(3, len(df) - 1):
         cur = df.iloc[i]
         prev1 = df.iloc[i-1]
         prev2 = df.iloc[i-2]
+        prev3 = df.iloc[i-3]
         next_candle = df.iloc[i+1]
         unique_id = str(next_candle['timestamp'])
 
-        # --- Deep green (long) ---
-        if hist := cur['hist'] > 0 and cur['hist'] > prev1['hist']:
-            # Only send if not already used
-            if unique_id not in used_signal_bars:
-                signal_type = "long"
-                signal_id = f"deepgreen-{unique_id}"
-                trigger = "Deep green MACD bar"
-                ts = next_candle['timestamp'].tz_localize('UTC').tz_convert('Asia/Kolkata').strftime('%Y-%m-%d %I:%M:%S %p')
-                price = next_candle['open']
+        if unique_id in used_signal_bars:
+            continue
 
-                subject = f"{signal_type.upper()} SIGNAL - {asset}"
-                body = (
-                    (f"🟢" if signal_type == "long" else "🔴") +
-                    f" {signal_type.upper()} SIGNAL TRIGGERED — {asset}\n\n" +
-                    f"📅 Time      : {ts}\n" +
-                    f"💰 Price     : ${price:.2f}\n" +
-                    f"🎯 Triggered : {trigger}\n\n" +
-                    "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🤖 Powered by MACD Signal Bot\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-                )
-                html_body = format_signal_html(signal_type, trigger, ts, price, asset, signal_id)
-                send_email(subject, body, html_body)
+        ts = next_candle['timestamp'].tz_localize('UTC').tz_convert('Asia/Kolkata').strftime('%Y-%m-%d %I:%M:%S %p')
+        price = next_candle['open']
+        signal_type = None
+        trigger = None
 
-                used_signal_bars.add(unique_id)
-                state["used_signal_bars"] = list(used_signal_bars)
-                save_state(state)
-                print(f"Signal sent and bar {unique_id} marked as used.")
-                break
-
-        # --- Deep red (short) ---
-        elif hist := cur['hist'] < 0 and cur['hist'] < prev1['hist']:
-            if unique_id not in used_signal_bars:
-                signal_type = "short"
-                signal_id = f"deepred-{unique_id}"
-                trigger = "Deep red MACD bar"
-                ts = next_candle['timestamp'].tz_localize('UTC').tz_convert('Asia/Kolkata').strftime('%Y-%m-%d %I:%M:%S %p')
-                price = next_candle['open']
-
-                subject = f"{signal_type.upper()} SIGNAL - {asset}"
-                body = (
-                    (f"🟢" if signal_type == "long" else "🔴") +
-                    f" {signal_type.upper()} SIGNAL TRIGGERED — {asset}\n\n" +
-                    f"📅 Time      : {ts}\n" +
-                    f"💰 Price     : ${price:.2f}\n" +
-                    f"🎯 Triggered : {trigger}\n\n" +
-                    "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🤖 Powered by MACD Signal Bot\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-                )
-                html_body = format_signal_html(signal_type, trigger, ts, price, asset, signal_id)
-                send_email(subject, body, html_body)
-
-                used_signal_bars.add(unique_id)
-                state["used_signal_bars"] = list(used_signal_bars)
-                save_state(state)
-                print(f"Signal sent and bar {unique_id} marked as used.")
-                break
-
-        # --- 3 consecutive light red (long) ---
-        idxs = [i, i-1, i-2]
-        light_red = all(
-            df.iloc[idx]['hist'] < 0 and df.iloc[idx]['hist'] > df.iloc[idx-1]['hist']
-            for idx in idxs
-        )
-        unused = all(
-            str(df.iloc[idx+1]['timestamp']) not in used_signal_bars for idx in idxs
-        )
-        if light_red and unused:
+        # === Deep green (long)
+        if cur['hist'] > 0 and cur['hist'] > prev1['hist']:
             signal_type = "long"
-            signal_id = f"3lightred-{unique_id}"
-            trigger = "3 consecutive light red MACD bars"
-            ts = next_candle['timestamp'].tz_localize('UTC').tz_convert('Asia/Kolkata').strftime('%Y-%m-%d %I:%M:%S %p')
-            price = next_candle['open']
+            trigger = "Deep green MACD bar"
 
-            subject = f"{signal_type.upper()} SIGNAL - {asset}"
-            body = (
-                (f"🟢" if signal_type == "long" else "🔴") +
-                f" {signal_type.upper()} SIGNAL TRIGGERED — {asset}\n\n" +
-                f"📅 Time      : {ts}\n" +
-                f"💰 Price     : ${price:.2f}\n" +
-                f"🎯 Triggered : {trigger}\n\n" +
-                "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🤖 Powered by MACD Signal Bot\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-            )
-            html_body = format_signal_html(signal_type, trigger, ts, price, asset, signal_id)
-            send_email(subject, body, html_body)
-
-            for idx in idxs:
-                used_signal_bars.add(str(df.iloc[idx+1]['timestamp']))
-            state["used_signal_bars"] = list(used_signal_bars)
-            save_state(state)
-            print(f"Signal sent and bars {[str(df.iloc[idx+1]['timestamp']) for idx in idxs]} marked as used.")
-            break
-
-        # --- 3 consecutive light green (short) ---
-        light_green = all(
-            df.iloc[idx]['hist'] > 0 and df.iloc[idx]['hist'] < df.iloc[idx-1]['hist']
-            for idx in idxs
-        )
-        unused = all(
-            str(df.iloc[idx+1]['timestamp']) not in used_signal_bars for idx in idxs
-        )
-        if light_green and unused:
+        # === Deep red (short)
+        elif cur['hist'] < 0 and cur['hist'] < prev1['hist']:
             signal_type = "short"
-            signal_id = f"3lightgreen-{unique_id}"
-            trigger = "3 consecutive light green MACD bars"
-            ts = next_candle['timestamp'].tz_localize('UTC').tz_convert('Asia/Kolkata').strftime('%Y-%m-%d %I:%M:%S %p')
-            price = next_candle['open']
+            trigger = "Deep red MACD bar"
 
+        # === 3 light red (long)
+        elif (prev1['hist'] < 0 and prev2['hist'] < 0 and prev3['hist'] < 0 and
+              prev1['hist'] > prev2['hist'] > prev3['hist'] and
+              all(str(df.iloc[idx + 1]['timestamp']) not in used_signal_bars for idx in [i-1, i-2, i-3])):
+            signal_type = "long"
+            trigger = "3 consecutive light red MACD bars"
+
+        # === 3 light green (short)
+        elif (prev1['hist'] > 0 and prev2['hist'] > 0 and prev3['hist'] > 0 and
+              prev1['hist'] < prev2['hist'] < prev3['hist'] and
+              all(str(df.iloc[idx + 1]['timestamp']) not in used_signal_bars for idx in [i-1, i-2, i-3])):
+            signal_type = "short"
+            trigger = "3 consecutive light green MACD bars"
+
+        if signal_type:
+            signal_id = f"{signal_type}-{unique_id}"
             subject = f"{signal_type.upper()} SIGNAL - {asset}"
-            body = (
-                (f"🟢" if signal_type == "long" else "🔴") +
-                f" {signal_type.upper()} SIGNAL TRIGGERED — {asset}\n\n" +
-                f"📅 Time      : {ts}\n" +
-                f"💰 Price     : ${price:.2f}\n" +
-                f"🎯 Triggered : {trigger}\n\n" +
-                "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🤖 Powered by MACD Signal Bot\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-            )
+            body = f"""{'🟢' if signal_type == 'long' else '🔴'} {signal_type.upper()} SIGNAL TRIGGERED — {asset}
+
+📅 Time      : {ts}
+💰 Price     : ${price:.2f}
+🎯 Triggered : {trigger}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🤖 Powered by MACD Signal Bot
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+"""
             html_body = format_signal_html(signal_type, trigger, ts, price, asset, signal_id)
             send_email(subject, body, html_body)
 
-            for idx in idxs:
-                used_signal_bars.add(str(df.iloc[idx+1]['timestamp']))
+            # Mark bars as used
+            if "light" in trigger:
+                for idx in [i-1, i-2, i-3]:
+                    used_signal_bars.add(str(df.iloc[idx + 1]['timestamp']))
+            else:
+                used_signal_bars.add(unique_id)
+
             state["used_signal_bars"] = list(used_signal_bars)
             save_state(state)
-            print(f"Signal sent and bars {[str(df.iloc[idx+1]['timestamp']) for idx in idxs]} marked as used.")
+            print(f"✅ Signal sent: {trigger} → {signal_type.upper()}")
             break
 
     else:
-        print("No qualifying signals found (or already sent for these bars).")
+        print("No valid signal found.")
 
 @app.route('/')
 def home():
