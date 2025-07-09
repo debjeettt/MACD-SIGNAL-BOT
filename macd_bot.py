@@ -57,7 +57,7 @@ def load_state():
     }
 
 def get_data():
-    ohlcv = exchange.fetch_ohlcv('MKR/USDT:USDT', timeframe='15m', limit=100)
+    ohlcv = exchange.fetch_ohlcv('INIT/USDT:USDT', timeframe='15m', limit=100)
     df = pd.DataFrame(ohlcv, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
     df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
     return df
@@ -85,7 +85,7 @@ def format_signal_html(signal_type, trigger, ts, price, asset, signal_id, bar_ty
     <h2>{emoji} {signal_type.upper()} SIGNAL — {badge}</h2>
     <p><b>Asset:</b> {asset}</p>
     <p><b>Time:</b> {ts}</p>
-    <p><b>Price:</b> ${price:.2f}</p>
+    <p><b>Price:</b> ${price:.4f}</p>
     <p><b>Trigger:</b> {trigger}</p>
     <p><b>Type:</b> {streak_info}</p>
     <p><b>Signal ID:</b> {signal_id}</p>
@@ -113,7 +113,7 @@ def check_macd_signals():
     last_deep_type = state.get("last_deep_type", None)
     df = get_data()
     df = add_macd(df)
-    asset = "MKR/USDT"
+    asset = "INIT/USDT"
 
     # Only process the last fully closed bar
     i = len(df) - 2
@@ -154,7 +154,7 @@ def check_macd_signals():
 
 Type        : {cur_type.replace('_', ' ').title()}
 📅 Time     : {ts}
-💰 Price    : ${price:.2f}
+💰 Price    : ${price:.4f}
 🎯 Trigger  : {trigger}
 Signal ID   : {signal_id}
 
@@ -203,7 +203,7 @@ Signal ID   : {signal_id}
 Type        : {cur_type.replace('_', ' ').title()}
 Streak      : 3
 📅 Time     : {ts}
-💰 Price    : ${price:.2f}
+💰 Price    : ${price:.4f}
 🎯 Trigger  : {trigger}
 Signal ID   : {signal_id}
 
