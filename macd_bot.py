@@ -57,7 +57,7 @@ def load_state():
     }
 
 def get_data():
-    ohlcv = exchange.fetch_ohlcv('INIT/USDT:USDT', timeframe='15m', limit=100)
+    ohlcv = exchange.fetch_ohlcv('LDO/USDT:USDT', timeframe='15m', limit=100)
     df = pd.DataFrame(ohlcv, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
     df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
     return df
@@ -113,7 +113,7 @@ def check_macd_signals():
     last_deep_type = state.get("last_deep_type", None)
     df = get_data()
     df = add_macd(df)
-    asset = "INIT/USDT"
+    asset = "LDO/USDT"
 
     # Only process the last fully closed bar
     i = len(df) - 2
